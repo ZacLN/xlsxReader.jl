@@ -186,6 +186,12 @@ function check_types(arr)
 end
 
 function readxls(file)
+    io = open(file)
+    if read(io, UInt8, 4) != [0x50, 0x4b, 0x03,0x04] 
+        close(io)
+        return error("$file is not an Excel file")
+    end
+    close(io)
     tdir = joinpath(tempdir(), tempname())
     run(`unzip $file -d $tdir`)
     ss = get_shared_strings(joinpath(tdir, "xl", "sharedStrings.xml"))
