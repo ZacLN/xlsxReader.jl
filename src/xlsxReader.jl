@@ -29,11 +29,6 @@ function parse_digits(R)
     x
 end
 
-# function convert_index(str)
-#     r = parse(Int, string(collect(c for c in str if isdigit(c))...))
-#     c = col(string(collect(c for c in str if !isdigit(c))...))
-#     return r, c
-# end
 function convert_index(str)
     C = UInt8[]
     R = UInt8[]
@@ -84,7 +79,6 @@ function seekuntil(io, str, i = 1)
     while !eof(io)
         c = read(io, Char)
         if c == str[i]
-            
             if i == length(str)
                 return position(io)
             else
@@ -97,7 +91,60 @@ function seekuntil(io, str, i = 1)
     return -1
 end
 
+function read_ctag(io, lc)
+    r = ""
+    isstring = false
+    while !eof(io)
+        c = read(io, Char)
+        if c == 'r'
+            c = read(io, Char)
+            if c == '='
+                c = read(io, Char)
+                if c == '\"'
+                    r = readuntil(io, '\"')[1:end-1]
+                end
+            end
+        end
+        if c == 't'
+            c = read(io, Char)
+            if c == '='
+                c = read(io, Char)
+                if c == '\"'
+                    c = read(io, Char)
+                    if c == 's'
+                        isstring = true
+                    end
+                end
+            end
+        end
+        if c == '>'
+            break
+        end
+        lc = c
+    end
+    return r, isstring, lc == '/'
+end
+
+function read_val(io)
+    val = ""
+    while !eof(io)
+        c = read(io, Char)
+        if c == '<'
+            c = read(io, Char)
+            if c == 'v'
+                c = read(io, Char)
+                if c == '>'
+                    val = readuntil(io, '<')[1:end-1]
+                    break
+                end
+            end
+        end
+    end
+    return val
+end
+
 function readcells(sheet, ss)
+    info("Reading $sheet")
     io = open(sheet)
     sizes = get_sheet_range(io)
     out = Array{Any}(last.(sizes)...)
@@ -109,18 +156,11 @@ function readcells(sheet, ss)
         seekuntil(io, "<c") == -1 && break
         c = read(io, Char)
         if c == ' '
-            ctag = readuntil(io, ">")
-            c = ctag[end-1]
-            if c != '/'
-                rs = search(ctag, "r=\"")
-                re = search(ctag, "\"", last(rs) + 1)
-                pos = ctag[last(rs) + 1:first(re) - 1]
-                str = readuntil(io, "</c>")[1:end-4]
-                # str = replace(str, "<v>", "")
-                # str = replace(str, "</v>", "")
-                str = rm_div(str)
-                if ismatch(r"(t=\"s\")",ctag)
-                    val = ss[parse(Int, str)]
+            pos, isstring, fslash = read_ctag(io, c)
+            if !fslash
+                str = read_val(io)
+                if isstring
+                    val = ss[parse_digits(str)]
                 else
                     val = parse(Float64, str)
                 end 
@@ -151,6 +191,7 @@ function readxls(file)
     ss = get_shared_strings(joinpath(tdir, "xl", "sharedStrings.xml"))
     sheets = []
     for f in readdir(joinpath(tdir, "xl", "worksheets"))
+        !endswith(f, ".xml") && continue
         push!(sheets, readcells(joinpath(tdir, "xl", "worksheets", f), ss))
     end
     rm(tdir,recursive = true)
